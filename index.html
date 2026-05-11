@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ml5 Emotion Recognition for TouchDesigner</title>
+    <script src="./src/vendor/p5.min.js"></script>
+    <script src="./src/vendor/ml5.min.js"></script>
+    <script src="./src/vendor/face-api.min.js"></script>
+  </head>
+  <body>
+    <div id="canvas-holder"></div>
+    <div id="debug-overlay">
+      <div id="model-status">Loading face expression models...</div>
+      <div id="socket-status">WebSocket: disconnected</div>
+      <div>
+        <span id="dominant-expression">none</span>
+        <span id="dominant-confidence">0.000</span>
+      </div>
+      <div id="face-count">faces: 0</div>
+      <div id="fps-status">draw fps: 0 | video: waiting</div>
+      <div id="webcam-status">webcam: default</div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

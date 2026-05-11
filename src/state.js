@@ -1,0 +1,30 @@
+// Runtime settings grouped in one place, following the broad state-module
+// pattern used by Torin's MediaPipe TouchDesigner project.
+
+export const webcamState = {
+  // Change these if you need a different camera/canvas size.
+  width: 640,
+  height: 480,
+  targetFrameRate: 30,
+  selectedLabel: "",
+  selectedDeviceId: "",
+  currentStream: null,
+};
+
+export const outputState = {
+  // Keep this in the 10-20 FPS range to avoid flooding TouchDesigner.
+  sendFps: 15,
+};
+
+export const faceApiState = {
+  // Local model folder. This mirrors Torin's local MediaPipe model approach:
+  // source files live under src/, and Vite copies them into _mpdist for tox packaging.
+  modelPath: "./src/faceapi/models",
+  options: {
+    withLandmarks: true,
+    withExpressions: true,
+    withDescriptors: false,
+    minConfidence: 0.5,
+    inputSize: 512,
+  },
+};
