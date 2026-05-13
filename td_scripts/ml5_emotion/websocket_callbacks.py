@@ -25,10 +25,48 @@ CHANNEL_ROWS = [
 ]
 
 
+EXPRESSION_ROWS = [
+    "neutral",
+    "happy",
+    "sad",
+    "angry",
+    "fearful",
+    "disgusted",
+    "surprised",
+    "dominantConfidence",
+]
+
+
+def _format_value(channel_name, value):
+    if channel_name in EXPRESSION_ROWS:
+        try:
+            number = float(value)
+        except Exception:
+            number = 0.0
+
+        if number < 0.0:
+            number = 0.0
+        elif number > 1.0:
+            number = 1.0
+
+        # Avoid scientific notation in Table DATs, e.g. 4.2e-8.
+        return "{:.6f}".format(number)
+
+    if channel_name in ("dominantValue", "hasFace"):
+        try:
+            return int(value)
+        except Exception:
+            return 0
+
+    return value
+
+
 def ensure_emotion_table(table_dat):
     """Create the expected name/value rows if the table is empty or malformed."""
     if table_dat.numRows == len(CHANNEL_ROWS) + 1 and table_dat[0, 0].val == "name":
-        return
+        existing_names = [table_dat[row, 0].val for row in range(1, table_dat.numRows)]
+        if existing_names == CHANNEL_ROWS:
+            return
 
     table_dat.clear()
     table_dat.appendRow(["name", "value"])
@@ -39,9 +77,27 @@ def ensure_emotion_table(table_dat):
 def write_values_to_table(table_dat, values):
     ensure_emotion_table(table_dat)
 
-    for row_index, channel_name in enumerate(CHANNEL_ROWS, start=1):
+    row_by_name = {
+        table_dat[row, 0].val: row
+        for row in range(1, table_dat.numRows)
+    }
+
+    for channel_name in CHANNEL_ROWS:
+        row_index = row_by_name[channel_name]
         table_dat[row_index, 0] = channel_name
-        table_dat[row_index, 1] = values.get(channel_name, 0)
+        table_dat[row_index, 1] = _format_value(channel_name, values.get(channel_name, 0))
+
+
+def _parse_emotion_payload(message):
+    for module_name in ("parse_emotion_json", "text1"):
+        try:
+            module = mod(module_name)
+            if module is not None:
+                return module.parse_emotion_payload(message)
+        except Exception:
+            pass
+
+    raise Exception("Could not find parse_emotion_json Text DAT")
 
 
 # DAT Execute callback for WebSocket DAT text messages.
@@ -53,7 +109,7 @@ def onReceiveText(dat, rowIndex, message):
     if not message or message in ("ping", "pong"):
         return
 
-    values = mod("parse_emotion_json").parse_emotion_payload(message)
+    values = _parse_emotion_payload(message)
     write_values_to_table(op("emotion_table"), values)
     return
 

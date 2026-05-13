@@ -11,6 +11,7 @@ const VIDEO_WIDTH = webcamState.width;
 const VIDEO_HEIGHT = webcamState.height;
 const SEND_FPS = outputState.sendFps;
 const SEND_INTERVAL_MS = 1000 / SEND_FPS;
+const NO_FACE_GRACE_MS = 2000;
 
 const ui = {
   modelStatus: document.getElementById("model-status"),
@@ -27,6 +28,8 @@ let detections = [];
 let modelReady = false;
 let video = null;
 let lastPayload = buildNoFacePayload();
+let lastFacePayload = buildNoFacePayload();
+let lastFaceTime = 0;
 let lastSendTime = 0;
 let cameraStarted = false;
 let centerMessage = "Starting camera...";
@@ -395,6 +398,11 @@ async function detectFaces() {
 
 function buildPayloadFromDetections(results) {
   if (!results.length) {
+    const heldPayload = buildHeldFacePayload();
+    if (heldPayload) {
+      return heldPayload;
+    }
+
     return buildNoFacePayload();
   }
 
@@ -402,7 +410,7 @@ function buildPayloadFromDetections(results) {
   const expressions = normalizeExpressions(primaryFace.expressions);
   const dominant = getDominantExpression(primaryFace.expressions);
 
-  return {
+  const payload = {
     type: "ml5_face_expression",
     timestamp: Date.now(),
     hasFace: true,
@@ -412,6 +420,28 @@ function buildPayloadFromDetections(results) {
     dominantConfidence: dominant.dominantConfidence,
     expressions,
     box: getBox(primaryFace),
+  };
+
+  lastFacePayload = payload;
+  lastFaceTime = performance.now();
+  return payload;
+}
+
+function buildHeldFacePayload() {
+  if (!lastFaceTime) {
+    return null;
+  }
+
+  const elapsed = performance.now() - lastFaceTime;
+  if (elapsed >= NO_FACE_GRACE_MS) {
+    return null;
+  }
+
+  return {
+    ...lastFacePayload,
+    timestamp: Date.now(),
+    heldFace: true,
+    heldFaceAgeMs: Math.round(elapsed),
   };
 }
 
@@ -430,6 +460,13 @@ function buildNoFacePayload() {
 }
 
 function buildSendPayload(payload) {
+  if (payload && payload.hasFace === false) {
+    const heldPayload = buildHeldFacePayload();
+    if (heldPayload) {
+      payload = heldPayload;
+    }
+  }
+
   return {
     ...payload,
     timestamp: Date.now(),

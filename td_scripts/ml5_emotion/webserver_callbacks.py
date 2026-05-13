@@ -64,6 +64,86 @@ def _write_webcam_list(webcam_list_dat, devices):
     webcam_list_dat.text = json.dumps(devices)
 
 
+def _write_text_dat(name, text):
+    dat = op(name)
+    if dat is not None:
+        dat.text = str(text)
+
+
+def _parse_emotion_payload(data):
+    for module_name in ("parse_emotion_json", "text1"):
+        try:
+            module = mod(module_name)
+            if module is not None:
+                return module.parse_emotion_payload(data)
+        except Exception:
+            pass
+
+    raise Exception("Could not find parse_emotion_json Text DAT")
+
+
+def _write_emotion_values(values):
+    table = op("emotion_table")
+    if table is None:
+        raise Exception("Could not find emotion_table")
+
+    try:
+        mod("websocket_callbacks").write_values_to_table(table, values)
+        return
+    except Exception:
+        pass
+
+    table.clear()
+    table.appendRow(["name", "value"])
+    channel_rows = (
+        "neutral",
+        "happy",
+        "sad",
+        "angry",
+        "fearful",
+        "disgusted",
+        "surprised",
+        "dominantValue",
+        "dominantConfidence",
+        "hasFace",
+    )
+
+    for channel_name in channel_rows:
+        table.appendRow([channel_name, _format_emotion_value(channel_name, values.get(channel_name, 0))])
+
+
+def _format_emotion_value(channel_name, value):
+    if channel_name in (
+        "neutral",
+        "happy",
+        "sad",
+        "angry",
+        "fearful",
+        "disgusted",
+        "surprised",
+        "dominantConfidence",
+    ):
+        try:
+            number = float(value)
+        except Exception:
+            number = 0.0
+
+        if number < 0.0:
+            number = 0.0
+        elif number > 1.0:
+            number = 1.0
+
+        return "{:.6f}".format(number)
+
+    if channel_name in ("dominantValue", "hasFace"):
+        try:
+            return int(value)
+        except Exception:
+            return 0
+
+    return value
+
+
 def onHTTPRequest(webServerDAT, request, response):
     uri = request["uri"]
     dist_path = _request_to_dist_path(uri)
@@ -119,24 +199,32 @@ def onWebSocketReceiveText(webServerDAT, client, data):
     if not data or data in ("ping", "pong"):
         return
 
+    _write_text_dat("ml5_last_message", data[:2000])
+
     try:
         parsed = json.loads(data)
-    except Exception:
+        _write_text_dat("ml5_status", "received type: " + str(parsed.get("type")))
+    except Exception as e:
         parsed = {}
+        _write_text_dat("ml5_status", "json parse error: " + str(e))
 
     if parsed.get("type") == "webcamDevices":
         try:
             _write_webcam_list(op("webcam_list"), parsed.get("devices", []))
+            _write_text_dat("ml5_status", "updated webcam_list")
         except Exception as e:
             print("Error updating webcam list:", e)
+            _write_text_dat("ml5_status", "webcam list error: " + str(e))
         return
 
     if parsed.get("type") == "ml5_face_expression":
         try:
-            values = mod("parse_emotion_json").parse_emotion_payload(data)
-            mod("websocket_callbacks").write_values_to_table(op("emotion_table"), values)
+            values = _parse_emotion_payload(data)
+            _write_emotion_values(values)
+            _write_text_dat("ml5_status", "updated emotion_table")
         except Exception as e:
             print("Error parsing ml5 emotion payload:", e)
+            _write_text_dat("ml5_status", "emotion parse/update error: " + str(e))
         return
 
     # Forward unrelated messages to other browser clients.
