@@ -24,6 +24,30 @@ CHANNEL_ROWS = [
     "hasFace",
 ]
 
+EYE_ROWS = [
+    "flipped",
+    "faceCenterX",
+    "faceCenterY",
+    "faceBoxX",
+    "faceBoxY",
+    "faceBoxWidth",
+    "faceBoxHeight",
+    "leftEyeX",
+    "leftEyeY",
+    "rightEyeX",
+    "rightEyeY",
+    "eyeAvgX",
+    "eyeAvgY",
+    "leftIrisCenterX",
+    "leftIrisCenterY",
+    "rightIrisCenterX",
+    "rightIrisCenterY",
+    "leftIrisRadius",
+    "rightIrisRadius",
+    "irisLandmarksFound",
+    "hasFace",
+]
+
 
 EXPRESSION_ROWS = [
     "neutral",
@@ -88,6 +112,44 @@ def write_values_to_table(table_dat, values):
         table_dat[row_index, 1] = _format_value(channel_name, values.get(channel_name, 0))
 
 
+def write_facemesh_to_table(table_dat, values):
+    table_dat.clear()
+    table_dat.appendRow(["index", "x", "y", "z"])
+
+    for point in values.get("keypoints", []):
+        table_dat.appendRow(
+            [
+                point.get("index", 0),
+                _format_float(point.get("x", 0.0)),
+                _format_float(point.get("y", 0.0)),
+                _format_float(point.get("z", 0.0)),
+            ]
+        )
+
+
+def write_eye_to_table(table_dat, values):
+    table_dat.clear()
+    table_dat.appendRow(["name", "value"])
+
+    for channel_name in EYE_ROWS:
+        if channel_name in ("hasFace", "irisLandmarksFound", "flipped"):
+            try:
+                value = int(values.get(channel_name, 0))
+            except Exception:
+                value = 0
+        else:
+            value = _format_float(values.get(channel_name, 0.0))
+
+        table_dat.appendRow([channel_name, value])
+
+
+def _format_float(value):
+    try:
+        return "{:.6f}".format(float(value))
+    except Exception:
+        return "0.000000"
+
+
 def _parse_emotion_payload(message):
     for module_name in ("parse_emotion_json", "text1"):
         try:
@@ -100,6 +162,16 @@ def _parse_emotion_payload(message):
     raise Exception("Could not find parse_emotion_json Text DAT")
 
 
+def _parse_facemesh_payload(message):
+    module = mod("parse_face_json")
+    return module.parse_facemesh_payload(message)
+
+
+def _parse_eye_payload(message):
+    module = mod("parse_eye_json")
+    return module.parse_eye_payload(message)
+
+
 # DAT Execute callback for WebSocket DAT text messages.
 # me - this DAT Execute DAT
 # dat - the DAT that received a message
@@ -109,8 +181,19 @@ def onReceiveText(dat, rowIndex, message):
     if not message or message in ("ping", "pong"):
         return
 
-    values = _parse_emotion_payload(message)
-    write_values_to_table(op("emotion_table"), values)
+    if message.find("ml5_facemesh", 0, 120) != -1:
+        values = _parse_facemesh_payload(message)
+        write_facemesh_to_table(op("face_table"), values)
+        return
+
+    if message.find("ml5_eye_tracking", 0, 120) != -1:
+        values = _parse_eye_payload(message)
+        write_eye_to_table(op("eye_table"), values)
+        return
+
+    if message.find("ml5_face_expression", 0, 120) != -1:
+        values = _parse_emotion_payload(message)
+        write_values_to_table(op("emotion_table"), values)
     return
 
 

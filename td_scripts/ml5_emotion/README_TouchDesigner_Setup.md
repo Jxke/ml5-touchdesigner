@@ -1,6 +1,6 @@
 # TouchDesigner Setup
 
-This project sends browser-side ml5 face expression data to TouchDesigner as JSON over the same local Web Server DAT that serves the browser files. This matches Torin's MediaPipe component pattern.
+This project sends browser-side ml5 data to TouchDesigner as JSON over the same local Web Server DAT that serves the browser files. This matches Torin's browser/WebSocket pattern.
 
 ## Network Setup
 
@@ -20,6 +20,7 @@ This project sends browser-side ml5 face expression data to TouchDesigner as JSO
 14. Create a Parameter DAT named `parameter1` watching the ML5 component custom parameters.
 15. Create a DAT Execute DAT watching `parameter1`, with `onCellChange` enabled, using `par_change_handler`.
 16. Set the Web Server DAT callbacks parameter to `webserver_callbacks`.
+17. Optional: create Text DATs named `facemesh_results` and `eye_tracking_results` if you want the raw FaceMesh and eye tracking JSON outputs.
 
 ## Web Server Setup
 
@@ -61,11 +62,46 @@ For a Torin-style parameter table, set `parameter1` rows like:
 | --- | --- |
 | Ml5port | 9981 |
 | Webcam | browser-device-id |
+| Emotion | 1 |
+| Facemesh | 0 |
+| Eyetrack | 0 |
 | Wwidth | 640 |
 | Wheight | 480 |
 | Wflip | 0 |
 
 Attach a DAT Execute DAT to `parameter1` and use `par_change_handler.py`. When the `Webcam` cell changes, it sends `{"Webcam": "browser-device-id"}` to the browser without reloading the page, and rebuilds the browser URL as `?webcamId=browser-device-id`.
+
+## Feature Toggles
+
+`rebuild_custom_pars.py` creates three model toggles:
+
+| parameter | default | browser effect |
+| --- | --- | --- |
+| Emotion | 1 | Loads face-api expression detection and updates `emotion_table`. |
+| Facemesh | 0 | Loads `ml5.faceMesh` with `runtime: "tfjs"` and `refineLandmarks: true`, draws blue FaceMesh points, and writes `face_table` plus optional raw JSON to `facemesh_results`. |
+| Eyetrack | 0 | Runs the same refined ML5 FaceMesh model internally, draws green eye crosshairs and pink iris rings, and writes `eye_table` plus optional raw JSON to `eye_tracking_results`. |
+
+Changing these toggles reloads the browser URL through `par_change_handler.py`. This is intentional because loading only the enabled model paths reduces browser and TouchDesigner lag. For optimized eye tracking, use `Emotion=0`, `Facemesh=0`, and `Eyetrack=1`; this avoids the full FaceMesh point-cloud output while still running the ML5 FaceMesh model needed for eyes.
+
+Refined FaceMesh model files are stored locally under `src/ml5-local-models/refined-facemesh/` and copied into `_mpdist` during `yarn build`. The browser points `ml5.faceMesh` directly at these local files with `detectorModelUrl` and `landmarkModelUrl`, so the tox/VFS build does not need to fetch FaceMesh model weights from TFHub/Kaggle.
+
+Make sure these refined VFS paths exist after import:
+
+```text
+#src#ml5-local-models#refined-facemesh#detector-short#model.json
+#src#ml5-local-models#refined-facemesh#detector-short#group1-shard1of1.bin
+#src#ml5-local-models#refined-facemesh#attention-mesh#model.json
+#src#ml5-local-models#refined-facemesh#attention-mesh#group1-shard1of1.bin
+```
+
+The older local VFS paths may still exist after import:
+
+```text
+#src#ml5-local-models#blazeface#google#model.json
+#src#ml5-local-models#blazeface#google#group1-shard1of1
+#src#ml5-local-models#facemesh#google#model.json
+#src#ml5-local-models#facemesh#google#group1-shard1of1
+```
 
 ## Expected Table
 
@@ -83,6 +119,27 @@ Attach a DAT Execute DAT to `parameter1` and use `par_change_handler.py`. When t
 | dominantValue | -1 |
 | dominantConfidence | 0.0 |
 | hasFace | 0 |
+
+`eye_table` uses the same two-column `name/value` layout:
+
+| name | value |
+| --- | --- |
+| leftEyeX | 0.0 |
+| leftEyeY | 0.0 |
+| rightEyeX | 0.0 |
+| rightEyeY | 0.0 |
+| eyeAvgX | 0.0 |
+| eyeAvgY | 0.0 |
+| leftIrisCenterX | 0.0 |
+| leftIrisCenterY | 0.0 |
+| rightIrisCenterX | 0.0 |
+| rightIrisCenterY | 0.0 |
+| leftIrisRadius | 0.0 |
+| rightIrisRadius | 0.0 |
+| irisLandmarksFound | 0 |
+| hasFace | 0 |
+
+If `irisLandmarksFound` is `1`, refined iris landmarks are active. If it is `0`, the browser is estimating the iris center from the ML5 FaceMesh eye contour.
 
 ## CHOP Output Option
 

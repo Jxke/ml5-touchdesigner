@@ -30,6 +30,21 @@ p.menuSource = "tdu.TableMenu(me.findChildren(name='webcam_menu')[0])"
 p.default = False
 p.val = False
 
+## Emotion
+p = ml5Page.appendToggle("Emotion", label="Emotion", order=None, replace=True)
+p.default = 1
+p.val = 1
+
+## FaceMesh
+p = ml5Page.appendToggle("Facemesh", label="FaceMesh", order=None, replace=True)
+p.default = 0
+p.val = 0
+
+## EyeTrack
+p = ml5Page.appendToggle("Eyetrack", label="EyeTrack", order=None, replace=True)
+p.default = 0
+p.val = 0
+
 ## Flip Webcam
 p = ml5Page.appendToggle("Wflip", label="Flip Webcam", order=None, replace=True)
 p.default = 0
@@ -40,11 +55,16 @@ p = ml5Page.appendToggle("Showoverlays", label="Show Overlays", order=None, repl
 p.default = 1
 p.val = 1
 
+## Show UI
+p = ml5Page.appendToggle("Showui", label="Show UI", order=None, replace=True)
+p.default = 1
+p.val = 1
+
 ## Reset
 p = ml5Page.appendPulse("Reset", label="Reset", order=None, replace=True)
 
 ## Sort
-ml5Page.sort("Autoport", "Ml5port", "Webcam", "Wflip", "Showoverlays", "Reset")
+ml5Page.sort("Autoport", "Ml5port", "Webcam", "Emotion", "Facemesh", "Eyetrack", "Wflip", "Showoverlays", "Showui", "Reset")
 
 # Sort
 op.sortCustomPages("ML5")

@@ -1,8 +1,8 @@
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
-// Torin's MediaPipe project uses this Vite shape for local development and
-// TouchDesigner packaging. Local browser libraries and model files are copied
-// into _mpdist so a tox can embed them in TouchDesigner's Virtual File System.
+// Torin-style local development and TouchDesigner packaging shape. Local
+// browser libraries and model files are copied into _mpdist so a tox can embed
+// them in TouchDesigner's Virtual File System.
 export default {
   build: {
     outDir: "_mpdist",
@@ -22,6 +22,10 @@ export default {
         {
           src: "src/faceapi/*",
           dest: "src/faceapi",
+        },
+        {
+          src: "src/ml5-local-models/*",
+          dest: "src/ml5-local-models",
         },
       ],
     }),

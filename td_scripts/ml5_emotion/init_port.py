@@ -47,7 +47,23 @@ def _update_current_url(port):
     if _parent_par_exists("Webcam"):
         webcam = str(parent().par.Webcam.eval())
 
-    url = "http://localhost:{}/index.html?webcamId={}".format(port, webcam)
+    emotion = int(parent().par.Emotion.eval()) if _parent_par_exists("Emotion") else 1
+    facemesh = int(parent().par.Facemesh.eval()) if _parent_par_exists("Facemesh") else 0
+    eyetrack = int(parent().par.Eyetrack.eval()) if _parent_par_exists("Eyetrack") else 0
+    wflip = int(parent().par.Wflip.eval()) if _parent_par_exists("Wflip") else 0
+    showoverlays = int(parent().par.Showoverlays.eval()) if _parent_par_exists("Showoverlays") else 1
+    showui = int(parent().par.Showui.eval()) if _parent_par_exists("Showui") else 1
+
+    url = "http://localhost:{}/index.html?webcamId={}&Emotion={}&Facemesh={}&Eyetrack={}&Wflip={}&Showoverlays={}&Showui={}".format(
+        port,
+        webcam,
+        emotion,
+        facemesh,
+        eyetrack,
+        wflip,
+        showoverlays,
+        showui,
+    )
 
     if current_url is not None:
         current_url.text = url
@@ -71,8 +87,8 @@ def configure_server():
     print("Using ML5 port " + str(thisPort))
     webServerDAT.par.port = thisPort
     _set_parent_port(thisPort)
-    url = _update_current_url(thisPort)
     webServerDAT.par.active = 1
+    url = _update_current_url(thisPort)
 
     if url:
         print("ML5 browser URL " + url)

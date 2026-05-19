@@ -1,5 +1,5 @@
 // Runtime settings grouped in one place, following the broad state-module
-// pattern used by Torin's MediaPipe TouchDesigner project.
+// pattern used by Torin's TouchDesigner browser bridge.
 
 export const webcamState = {
   // Change these if you need a different camera/canvas size.
@@ -16,8 +16,20 @@ export const outputState = {
   sendFps: 15,
 };
 
+export const featureState = {
+  emotion: true,
+  // faceMesh means the ML5 FaceMesh model is running internally.
+  // faceMeshOutput means send/draw the full FaceMesh point cloud.
+  faceMesh: false,
+  faceMeshOutput: false,
+  eyeTrack: false,
+  showOverlays: true,
+  showUI: true,
+  webcamFlip: false,
+};
+
 export const faceApiState = {
-  // Local model folder. This mirrors Torin's local MediaPipe model approach:
+  // Local model folder. This mirrors Torin's local model packaging approach:
   // source files live under src/, and Vite copies them into _mpdist for tox packaging.
   modelPath: "./src/faceapi/models",
   options: {

@@ -1,12 +1,12 @@
 # ml5-touchdesigner
 
-Browser-based facial expression recognition for TouchDesigner using `ml5.js`, `p5.js`, and a local WebSocket JSON stream.
+Browser-based facial expression, FaceMesh, and eye-tracking bridge for TouchDesigner using `ml5.js`, `p5.js`, and a local WebSocket JSON stream.
 
-The browser opens the webcam, runs `ml5.faceApi` with expression detection, draws a simple preview, and sends expression values to TouchDesigner. TouchDesigner receives the JSON with a WebSocket DAT and converts it into DAT/CHOP-friendly channels.
+The browser opens the webcam, runs browser-side ML, draws a simple preview, and sends expression / FaceMesh / eye values to TouchDesigner. TouchDesigner receives the JSON with a WebSocket DAT and converts it into DAT/CHOP-friendly channels.
 
 ## Architecture
 
-This follows the same broad pattern as Torin Blankensmith's MediaPipe TouchDesigner project:
+This follows the same broad pattern as Torin Blankensmith's browser-to-TouchDesigner project:
 
 1. A Vite-served browser page runs the webcam and browser ML model.
 2. TouchDesigner hosts or launches that page through Chromium/Web Render, or you test it in an external browser.
@@ -15,7 +15,7 @@ This follows the same broad pattern as Torin Blankensmith's MediaPipe TouchDesig
 
 This project does not run ml5 inside TouchDesigner Python. The ML runtime belongs in the browser.
 
-The browser assets are stored locally in `src/vendor/` and the face-expression model files are stored locally in `src/faceapi/models/`. That mirrors Torin's clean release approach: the tox build can embed the built web page and model files into TouchDesigner's Virtual File System, so non-technical users can open the tox without running command-line build steps.
+The browser assets are stored locally in `src/vendor/`, and the face-expression model files are stored locally in `src/faceapi/models/`. FaceMesh/EyeTrack uses newer `ml5.faceMesh` with `runtime: "tfjs"` and `refineLandmarks: true`, so the project remains an ML5 browser bridge rather than a TouchDesigner Python ML project.
 
 ## Do You Need Install And Build?
 

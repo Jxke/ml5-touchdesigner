@@ -23,18 +23,33 @@ NO_RELOAD_PARS = [
     "Wflip",
     "Autoport",
     "Showoverlays",
+    "Showui",
 ]
 
 
 def _port_from_parameter_table(dat):
-    for key in ("Ml5port", "Mediapipeport", "Port"):
-        try:
-            value = dat[key, 1]
-            if value is not None:
-                return str(value)
-        except Exception:
-            pass
-    return str(op("webserver1").par.port.eval())
+    # Prefer the ML5 component parameter and actual Web Server DAT port.
+    # Do not fall back to old external model rows here, because a stale
+    # parameter table can rewrite webBrowser to a closed port and cause
+    # ERR_CONNECTION_REFUSED.
+    try:
+        return str(parent().par.Ml5port.eval())
+    except Exception:
+        pass
+
+    try:
+        return str(op("webserver1").par.port.eval())
+    except Exception:
+        pass
+
+    try:
+        value = dat["Ml5port", 1]
+        if value is not None:
+            return str(value)
+    except Exception:
+        pass
+
+    return "9981"
 
 
 def _send_text_to_web_clients(message):
@@ -62,7 +77,7 @@ def _build_url(dat):
 
     for i in range(dat.numRows):
         key = str(dat[i, 0])
-        if key and key not in ("name", "Ml5port", "Mediapipeport", "Port"):
+        if key and key not in ("name", "Ml5port", "Mediapipeport", "Movenetport", "Port"):
             if key == "Webcam":
                 # Torin-style URL contract: the custom Webcam parameter value
                 # is sent as webcamId, usually a browser deviceId.

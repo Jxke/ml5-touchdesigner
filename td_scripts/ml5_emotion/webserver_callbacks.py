@@ -53,13 +53,16 @@ def _set_content_type(response, file_name):
 
     response["Content-Type"] = mime_type
     response["Permissions-Policy"] = "camera=(self), microphone=()"
+    response["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
 
 
 def _write_webcam_list(webcam_list_dat, devices):
     if webcam_list_dat is None:
         return
 
-    # Match Torin's MediaPipe flow: webcam_list stores raw JSON text.
+    # Match Torin-style flow: webcam_list stores raw JSON text.
     # A downstream JSON/table DAT named webcam_menu parses it for tdu.TableMenu.
     webcam_list_dat.text = json.dumps(devices)
 
@@ -80,6 +83,16 @@ def _parse_emotion_payload(data):
             pass
 
     raise Exception("Could not find parse_emotion_json Text DAT")
+
+
+def _parse_facemesh_payload(data):
+    module = mod("parse_face_json")
+    return module.parse_facemesh_payload(data)
+
+
+def _parse_eye_payload(data):
+    module = mod("parse_eye_json")
+    return module.parse_eye_payload(data)
 
 
 def _write_emotion_values(values):
@@ -142,6 +155,77 @@ def _format_emotion_value(channel_name, value):
             return 0
 
     return value
+
+
+def _write_facemesh_values(values):
+    table = op("face_table")
+    if table is None:
+        return
+
+    try:
+        mod("websocket_callbacks").write_facemesh_to_table(table, values)
+        return
+    except Exception:
+        pass
+
+    table.clear()
+    table.appendRow(["index", "x", "y", "z"])
+    for point in values.get("keypoints", []):
+        table.appendRow(
+            [
+                point.get("index", 0),
+                _format_table_float(point.get("x", 0.0)),
+                _format_table_float(point.get("y", 0.0)),
+                _format_table_float(point.get("z", 0.0)),
+            ]
+        )
+
+
+def _write_eye_values(values):
+    table = op("eye_table")
+    if table is None:
+        return
+
+    try:
+        mod("websocket_callbacks").write_eye_to_table(table, values)
+        return
+    except Exception:
+        pass
+
+    table.clear()
+    table.appendRow(["name", "value"])
+    for name in (
+        "flipped",
+        "faceCenterX",
+        "faceCenterY",
+        "faceBoxX",
+        "faceBoxY",
+        "faceBoxWidth",
+        "faceBoxHeight",
+        "leftEyeX",
+        "leftEyeY",
+        "rightEyeX",
+        "rightEyeY",
+        "eyeAvgX",
+        "eyeAvgY",
+        "leftIrisCenterX",
+        "leftIrisCenterY",
+        "rightIrisCenterX",
+        "rightIrisCenterY",
+        "leftIrisRadius",
+        "rightIrisRadius",
+        "irisLandmarksFound",
+        "hasFace",
+    ):
+        value = int(values.get(name, 0)) if name in ("hasFace", "irisLandmarksFound", "flipped") else _format_table_float(values.get(name, 0.0))
+        table.appendRow([name, value])
+
+
+def _format_table_float(value):
+    try:
+        return "{:.6f}".format(float(value))
+    except Exception:
+        return "0.000000"
 
 
 def onHTTPRequest(webServerDAT, request, response):
@@ -225,6 +309,26 @@ def onWebSocketReceiveText(webServerDAT, client, data):
         except Exception as e:
             print("Error parsing ml5 emotion payload:", e)
             _write_text_dat("ml5_status", "emotion parse/update error: " + str(e))
+        return
+
+    if parsed.get("type") == "ml5_facemesh":
+        try:
+            _write_text_dat("facemesh_results", data)
+            _write_facemesh_values(_parse_facemesh_payload(data))
+            _write_text_dat("ml5_status", "updated facemesh_results")
+        except Exception as e:
+            print("Error parsing ml5 facemesh payload:", e)
+            _write_text_dat("ml5_status", "facemesh parse/update error: " + str(e))
+        return
+
+    if parsed.get("type") == "ml5_eye_tracking":
+        try:
+            _write_text_dat("eye_tracking_results", data)
+            _write_eye_values(_parse_eye_payload(data))
+            _write_text_dat("ml5_status", "updated eye_tracking_results")
+        except Exception as e:
+            print("Error parsing ml5 eye tracking payload:", e)
+            _write_text_dat("ml5_status", "eye parse/update error: " + str(e))
         return
 
     # Forward unrelated messages to other browser clients.
