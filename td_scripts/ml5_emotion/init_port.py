@@ -47,9 +47,11 @@ def _update_current_url(port):
     if _parent_par_exists("Webcam"):
         webcam = str(parent().par.Webcam.eval())
 
-    emotion = int(parent().par.Emotion.eval()) if _parent_par_exists("Emotion") else 1
     facemesh = int(parent().par.Facemesh.eval()) if _parent_par_exists("Facemesh") else 0
     eyetrack = int(parent().par.Eyetrack.eval()) if _parent_par_exists("Eyetrack") else 0
+    emotion = int(parent().par.Emotion.eval()) if _parent_par_exists("Emotion") else 1
+    if facemesh or eyetrack:
+        emotion = 0
     wflip = int(parent().par.Wflip.eval()) if _parent_par_exists("Wflip") else 0
     showoverlays = int(parent().par.Showoverlays.eval()) if _parent_par_exists("Showoverlays") else 1
     showui = int(parent().par.Showui.eval()) if _parent_par_exists("Showui") else 1

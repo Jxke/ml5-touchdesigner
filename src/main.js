@@ -12,7 +12,7 @@ const VIDEO_HEIGHT = webcamState.height;
 const SEND_FPS = outputState.sendFps;
 const SEND_INTERVAL_MS = 1000 / SEND_FPS;
 const NO_FACE_GRACE_MS = 2000;
-const BUILD_ID = "ml5-td-lean-refined-eye-2026-05-19-01";
+const BUILD_ID = "ml5-td-no-webgpu-2026-05-21-01";
 const FACEMESH_TARGET_FPS = 12;
 const FACEMESH_POLL_MS = 1000 / FACEMESH_TARGET_FPS;
 const FACEMESH_INFERENCE_WIDTH = 192;
@@ -53,9 +53,11 @@ let centerMessage = "Starting camera...";
 let p5Instance = null;
 let lastVideoTime = -1;
 let lastVideoFrameChangeTime = 0;
+let emotionDetectionActive = false;
+let lastEmotionDurationMs = -1;
 let faceMeshPollTimer = null;
 let faceMeshPollingActive = false;
-let lastFaceMeshDurationMs = 0;
+let lastFaceMeshDurationMs = -1;
 let faceMeshFps = 0;
 let faceMeshFpsCounter = 0;
 let lastFaceMeshFpsTime = 0;
@@ -73,6 +75,7 @@ const emotionSocket = new EmotionWebSocket({
     ui.socketStatus.dataset.connected = String(connected);
 
     if (connected) {
+      sendRuntimeStatus("socket_connected");
       sendWebcamDevices();
     }
   },
@@ -118,10 +121,12 @@ new window.p5((p) => {
 
 async function startWebcam(p) {
   centerMessage = "Requesting camera access...";
+  setModelStatus("camera_request");
 
   if (!navigator.mediaDevices?.getUserMedia) {
     centerMessage = "Camera error: getUserMedia is not available in this browser.";
     ui.modelStatus.textContent = centerMessage;
+    sendRuntimeStatus("camera_error", { error: "getUserMedia unavailable" });
     return;
   }
 
@@ -141,6 +146,7 @@ async function startWebcam(p) {
     cameraStarted = true;
     lastVideoTime = -1;
     lastVideoFrameChangeTime = performance.now();
+    sendRuntimeStatus("camera_started", getVideoStatus());
     await sendWebcamDevices();
     updateWebcamReadout();
     onWebcamReady();
@@ -148,6 +154,7 @@ async function startWebcam(p) {
     console.error(error);
     centerMessage = `Camera error: ${error.name}. ${error.message}`;
     ui.modelStatus.textContent = centerMessage;
+    sendRuntimeStatus("camera_error", { error: `${error.name}: ${error.message}` });
   }
 }
 
@@ -174,10 +181,18 @@ function handleQueryParams() {
   featureState.showUI = readBooleanParam(params, ["ShowUI", "Showui", "showUI", "showui"], featureState.showUI);
   featureState.webcamFlip = readBooleanParam(params, ["Wflip", "Flip", "flip"], featureState.webcamFlip);
 
-  // EyeTrack uses the ML5 FaceMesh model internally, but it does not need to
-  // send or draw the full face mesh unless the FaceMesh toggle is also enabled.
-  featureState.faceMesh = featureState.faceMeshOutput || featureState.eyeTrack;
+  applyOptimizedFeatureMode();
   applyRuntimeVisualState();
+}
+
+function applyOptimizedFeatureMode() {
+  // EyeTrack and FaceMesh are heavier modes. If either is active, do not also
+  // load face-api emotion; this keeps the browser bridge in one ML mode at a time.
+  featureState.faceMesh = featureState.faceMeshOutput || featureState.eyeTrack;
+
+  if (featureState.faceMesh) {
+    featureState.emotion = false;
+  }
 }
 
 function updateStartupFeatureReadout() {
@@ -338,6 +353,7 @@ async function changeWebcam(webcamLabel) {
       }
       emotionReady = false;
       faceMeshReady = false;
+      stopEmotionDetection();
       stopFaceMeshPolling();
       cameraStarted = false;
       detections = [];
@@ -368,6 +384,7 @@ async function changeWebcam(webcamLabel) {
     }
     emotionReady = false;
     faceMeshReady = false;
+    stopEmotionDetection();
     stopFaceMeshPolling();
     cameraStarted = false;
     detections = [];
@@ -483,7 +500,7 @@ function handleSocketMessage(message) {
 }
 
 function onWebcamReady() {
-  ui.modelStatus.textContent = "Webcam started. Loading enabled ML models...";
+  setModelStatus("models_loading", "Webcam started. Loading enabled ML models...");
   centerMessage = "Loading enabled ML models...";
 
   loadModels();
@@ -495,7 +512,7 @@ async function loadModels() {
   try {
     if (featureState.emotion) {
       enabledModels.push("emotion");
-      ui.modelStatus.textContent = "Loading emotion model...";
+      setModelStatus("emotion_loading", "Loading emotion model...");
       const modelPath = faceApiState.modelPath;
       faceApi = window.faceapi;
       await Promise.all([
@@ -504,15 +521,19 @@ async function loadModels() {
         faceApi.nets.faceExpressionNet.loadFromUri(modelPath),
       ]);
       emotionReady = true;
-      detectFaces();
+      lastEmotionDurationMs = -1;
+      setModelStatus("emotion_ready", "Emotion model ready.");
+      startEmotionDetection();
     }
 
     if (featureState.faceMesh) {
       enabledModels.push(featureState.faceMeshOutput && featureState.eyeTrack ? "facemesh+eyetrack" : featureState.eyeTrack ? "eyetrack" : "facemesh");
-      ui.modelStatus.textContent = featureState.eyeTrack
-        ? "Loading EyeTrack model..."
-        : "Loading FaceMesh model...";
+      setModelStatus(
+        "facemesh_loading",
+        featureState.eyeTrack ? "Loading EyeTrack model..." : "Loading FaceMesh model..."
+      );
       await loadFaceMesh();
+      setModelStatus("facemesh_ready", "FaceMesh model ready.");
     }
 
     if (!enabledModels.length) {
@@ -521,42 +542,14 @@ async function loadModels() {
       return;
     }
 
-    ui.modelStatus.textContent = `enabled: ${enabledModels.join(", ")}`;
+    setModelStatus("models_ready", `enabled: ${enabledModels.join(", ")}`);
     centerMessage = "";
   } catch (error) {
     console.error(error);
     centerMessage = `Model load error: ${error.message}`;
     ui.modelStatus.textContent = centerMessage;
+    sendRuntimeStatus("model_load_error", { error: error.message });
   }
-}
-
-async function detectFaces() {
-  if (!faceApi || !emotionReady) {
-    return;
-  }
-
-  try {
-    const options = new faceApi.TinyFaceDetectorOptions({
-      inputSize: faceApiState.options.inputSize,
-      scoreThreshold: faceApiState.options.minConfidence,
-    });
-
-    const results = await faceApi
-      .detectAllFaces(video.elt, options)
-      .withFaceLandmarks(true)
-      .withFaceExpressions();
-
-    detections = Array.isArray(results) ? results : [];
-    lastPayload = buildPayloadFromDetections(detections);
-    updateReadout(lastPayload);
-  } catch (error) {
-    console.error(error);
-    ui.modelStatus.textContent = "Detection error. See browser console.";
-    window.setTimeout(detectFaces, 250);
-    return;
-  }
-
-  window.requestAnimationFrame(detectFaces);
 }
 
 async function loadFaceMesh() {
@@ -582,6 +575,58 @@ async function loadFaceMesh() {
   updateFaceMeshReadout(lastFaceMeshPayload);
 }
 
+function startEmotionDetection() {
+  stopEmotionDetection();
+  emotionDetectionActive = true;
+  window.requestAnimationFrame(detectFaces);
+}
+
+function stopEmotionDetection() {
+  emotionDetectionActive = false;
+}
+
+async function detectFaces() {
+  if (!emotionDetectionActive) {
+    return;
+  }
+
+  const startedAt = performance.now();
+
+  if (!faceApi || !emotionReady || !video?.elt) {
+    window.requestAnimationFrame(detectFaces);
+    return;
+  }
+
+  if (video.elt.readyState < 2 || !video.elt.videoWidth || !video.elt.videoHeight) {
+    window.requestAnimationFrame(detectFaces);
+    return;
+  }
+
+  try {
+    const options = new faceApi.TinyFaceDetectorOptions({
+      inputSize: faceApiState.options.inputSize,
+      scoreThreshold: faceApiState.options.minConfidence,
+    });
+
+    const results = await faceApi
+      .detectAllFaces(video.elt, options)
+      .withFaceLandmarks(true)
+      .withFaceExpressions();
+
+    lastEmotionDurationMs = Math.round(performance.now() - startedAt);
+    detections = Array.isArray(results) ? results : [];
+    lastPayload = buildPayloadFromDetections(detections);
+    updateReadout(lastPayload);
+  } catch (error) {
+    console.error(error);
+    ui.modelStatus.textContent = "Emotion detection error. See browser console.";
+    window.setTimeout(detectFaces, 250);
+    return;
+  }
+
+  window.requestAnimationFrame(detectFaces);
+}
+
 function getFaceMeshInferenceSize() {
   return {
     width: FACEMESH_INFERENCE_WIDTH,
@@ -595,13 +640,29 @@ async function configureTfBackend() {
     return;
   }
 
+  if (typeof tf.removeBackend === "function") {
+    try {
+      tf.removeBackend("webgpu");
+    } catch (error) {
+      console.warn("Could not remove TensorFlow.js WebGPU backend:", error);
+    }
+  }
+
   try {
     await tf.setBackend("webgl");
     if (typeof tf.ready === "function") {
       await tf.ready();
     }
+
+    if (typeof tf.getBackend === "function" && tf.getBackend() !== "webgl") {
+      throw new Error("TensorFlow.js selected " + tf.getBackend() + " instead of webgl");
+    }
   } catch (error) {
     console.warn("Could not switch TensorFlow.js backend to WebGL:", error);
+    await tf.setBackend("cpu");
+    if (typeof tf.ready === "function") {
+      await tf.ready();
+    }
   }
 }
 
@@ -624,6 +685,7 @@ async function waitForFaceMeshInternalModel() {
 function startFaceMeshPolling() {
   stopFaceMeshPolling();
   faceMeshPollingActive = true;
+  lastFaceMeshDurationMs = -1;
   lastSentFaceMeshPredictCount = -1;
   lastSentEyeTrackPredictCount = -1;
   lastFaceMeshFpsTime = performance.now();
@@ -669,6 +731,7 @@ async function startFaceMeshPollOnce() {
   }
 
   try {
+    await ensureTfBackendReady();
     const input = prepareFaceMeshInput();
     const results = await faceMeshModel.detect(input);
     lastFaceMeshDurationMs = Math.round(performance.now() - startedAt);
@@ -685,6 +748,22 @@ async function startFaceMeshPollOnce() {
   }
 
   scheduleNextFaceMeshPoll(startedAt);
+}
+
+async function ensureTfBackendReady() {
+  const tf = window.ml5?.tf;
+  if (!tf) {
+    return;
+  }
+
+  if (typeof tf.getBackend === "function" && tf.getBackend() === "webgpu") {
+    await configureTfBackend();
+    return;
+  }
+
+  if (typeof tf.ready === "function") {
+    await tf.ready();
+  }
 }
 
 function prepareFaceMeshInput() {
@@ -1515,7 +1594,55 @@ function updateFpsReadout(p, now) {
   }
 
   const faceMeshStatus = featureState.faceMesh
-    ? ` | mesh fps: ${faceMeshFps.toFixed(1)} | mesh ms: ${lastFaceMeshDurationMs}`
+    ? ` | mesh: ${formatModelMs(faceMeshReady, lastFaceMeshDurationMs)}`
     : "";
-  ui.fpsStatus.textContent = `draw fps: ${p.frameRate().toFixed(1)}${videoLive ? "" : " | stalled"}${faceMeshStatus}`;
+  const emotionStatus = featureState.emotion
+    ? ` | emotion: ${formatModelMs(emotionReady, lastEmotionDurationMs)}`
+    : "";
+  ui.fpsStatus.textContent = `draw fps: ${p.frameRate().toFixed(1)}${videoLive ? "" : " | stalled"}${emotionStatus}${faceMeshStatus}`;
+}
+
+function formatModelMs(isReady, durationMs) {
+  if (!isReady) {
+    return "loading";
+  }
+
+  if (durationMs < 0) {
+    return "waiting";
+  }
+
+  return `${durationMs}ms`;
+}
+
+function setModelStatus(stage, message = stage) {
+  ui.modelStatus.textContent = `${message} | build: ${BUILD_ID}`;
+  sendRuntimeStatus(stage);
+}
+
+function getVideoStatus() {
+  return {
+    videoReadyState: video?.elt?.readyState ?? 0,
+    videoWidth: video?.elt?.videoWidth ?? 0,
+    videoHeight: video?.elt?.videoHeight ?? 0,
+    currentTime: video?.elt?.currentTime ?? 0,
+  };
+}
+
+function sendRuntimeStatus(stage, extra = {}) {
+  emotionSocket.sendJson({
+    type: "ml5_status",
+    stage,
+    buildId: BUILD_ID,
+    emotionEnabled: featureState.emotion,
+    faceMeshEnabled: featureState.faceMesh,
+    faceMeshOutputEnabled: featureState.faceMeshOutput,
+    eyeTrackEnabled: featureState.eyeTrack,
+    emotionReady,
+    faceMeshReady,
+    cameraStarted,
+    emotionMs: lastEmotionDurationMs,
+    faceMeshMs: lastFaceMeshDurationMs,
+    ...getVideoStatus(),
+    ...extra,
+  });
 }

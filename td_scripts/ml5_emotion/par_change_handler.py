@@ -85,7 +85,14 @@ def _build_url(dat):
             else:
                 dat_params[key] = dat[i, 1]
 
+    if _truthy(dat_params.get("Facemesh")) or _truthy(dat_params.get("Eyetrack")):
+        dat_params["Emotion"] = 0
+
     return url + urllib.parse.urlencode(dat_params)
+
+
+def _truthy(value):
+    return str(value).strip().lower() in ("1", "true", "on", "yes")
 
 
 def onTableChange(dat):

@@ -301,6 +301,30 @@ def onWebSocketReceiveText(webServerDAT, client, data):
             _write_text_dat("ml5_status", "webcam list error: " + str(e))
         return
 
+    if parsed.get("type") == "ml5_status":
+        stage = parsed.get("stage", "")
+        build_id = parsed.get("buildId", "")
+        emotion_ready = parsed.get("emotionReady", "")
+        facemesh_ready = parsed.get("faceMeshReady", "")
+        camera_started = parsed.get("cameraStarted", "")
+        video_ready_state = parsed.get("videoReadyState", "")
+        emotion_ms = parsed.get("emotionMs", "")
+        facemesh_ms = parsed.get("faceMeshMs", "")
+        _write_text_dat(
+            "ml5_status",
+            "stage: {} | build: {} | camera: {} | videoReadyState: {} | emotionReady: {} | faceMeshReady: {} | emotionMs: {} | faceMeshMs: {}".format(
+                stage,
+                build_id,
+                camera_started,
+                video_ready_state,
+                emotion_ready,
+                facemesh_ready,
+                emotion_ms,
+                facemesh_ms,
+            ),
+        )
+        return
+
     if parsed.get("type") == "ml5_face_expression":
         try:
             values = _parse_emotion_payload(data)
